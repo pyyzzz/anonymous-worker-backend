@@ -6,6 +6,7 @@ import com.human.anonymous_worker.entity.Post;
 import com.human.anonymous_worker.entity.User;
 import com.human.anonymous_worker.entity.enums.PostCategory;
 import com.human.anonymous_worker.repository.CommentRepository;
+import com.human.anonymous_worker.repository.LikeRepository;
 import com.human.anonymous_worker.repository.PostRepository;
 import com.human.anonymous_worker.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,8 @@ public class PostService {
 
     private final PostRepository postRepository;
     private final UserRepository userRepository;
-    private final CommentRepository commentRepository; // 댓글 수 집계용 추가
+    private final CommentRepository commentRepository;
+    private final LikeRepository likeRepository;       // 추가
 
     public PostResDto savePost(PostReqDto dto) {
         User user = findUserById(dto.getUserId());
@@ -42,7 +44,6 @@ public class PostService {
                 .collect(Collectors.toList());
     }
 
-    // 조회수 +1 포함
     public PostResDto getPost(Long postId) {
         Post post = findPostById(postId);
         post.setViewCount(post.getViewCount() + 1);
@@ -75,9 +76,21 @@ public class PostService {
 
     public void deletePost(Long postId, Long userId) {
         Post post = findPostById(postId);
-        if (!post.getUser().getUserId().equals(userId))
+        User user = findUserById(userId);
+
+        // 관리자 또는 게시글 작성자만 삭제 가능
+        boolean isAdmin = user.isAdmin();
+        boolean isWriter = post.getUser().getUserId().equals(userId);
+
+        if (!isAdmin && !isWriter)
             throw new IllegalArgumentException("게시글 삭제 권한이 없습니다.");
+
+        // 연관 데이터 먼저 삭제 (FK 제약 위반 방지)
+        likeRepository.deleteByPostPostId(postId);
+        commentRepository.deleteByPostPostId(postId);
+
         postRepository.delete(post);
+        log.info("게시글 삭제 완료: postId={}, deletedBy={}, isAdmin={}", postId, userId, isAdmin);
     }
 
     public Post findPostById(Long postId) {
